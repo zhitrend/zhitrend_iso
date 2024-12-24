@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFileDialog, QComboBox, 
-                             QProgressBar, QWidget, QMessageBox, QFrame)
+                             QProgressBar, QWidget, QMessageBox, QFrame, QDialog)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 from usb_maker import USBMaker
@@ -44,6 +44,11 @@ class USBMakerApp(QMainWindow):
                 transform: translateY(1px);
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             }
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+                box-shadow: none;
+            }
             QComboBox {
                 background-color: white;
                 border: 1px solid #e0e4e8;
@@ -72,6 +77,9 @@ class USBMakerApp(QMainWindow):
                 border-radius: 8px;
                 text-align: center;
                 background-color: #f8f9fa;
+                height: 25px;
+                color: #2c3e50;
+                font-weight: bold;
             }
             QProgressBar::chunk {
                 background-color: #2ecc71;
@@ -82,6 +90,13 @@ class USBMakerApp(QMainWindow):
             QFrame.line {
                 color: #e0e4e8;
                 height: 2px;
+            }
+            QToolTip {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 5px;
+                border-radius: 4px;
             }
         """)
         
@@ -130,6 +145,7 @@ class USBMakerApp(QMainWindow):
         self.select_iso_btn = QPushButton('浏览')
         self.select_iso_btn.setIcon(QIcon.fromTheme('document-open'))
         self.select_iso_btn.clicked.connect(self.select_iso_file)
+        self.select_iso_btn.setToolTip('选择要制作启动盘的ISO文件')
         
         iso_layout.addWidget(self.iso_label)
         iso_layout.addWidget(self.iso_path, stretch=3)
@@ -140,9 +156,11 @@ class USBMakerApp(QMainWindow):
         usb_layout = QHBoxLayout()
         self.usb_label = QLabel('选择U盘:')
         self.usb_combo = QComboBox()
+        self.usb_combo.setPlaceholderText('请选择U盘')
         self.refresh_usb_btn = QPushButton('刷新')
         self.refresh_usb_btn.setIcon(QIcon.fromTheme('view-refresh'))
         self.refresh_usb_btn.clicked.connect(self.refresh_usb_drives)
+        self.refresh_usb_btn.setToolTip('重新扫描可用U盘')
         
         usb_layout.addWidget(self.usb_label)
         usb_layout.addWidget(self.usb_combo, stretch=3)
@@ -155,6 +173,23 @@ class USBMakerApp(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat('%p%')
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #e0e4e8;
+                border-radius: 8px;
+                text-align: center;
+                background-color: #f8f9fa;
+                height: 25px;
+                color: #2c3e50;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #2ecc71;
+                width: 10px;
+                margin: 0.5px;
+                border-radius: 5px;
+            }
+        """)
         
         progress_layout.addWidget(progress_label)
         progress_layout.addWidget(self.progress_bar)
@@ -165,14 +200,24 @@ class USBMakerApp(QMainWindow):
         self.make_btn = QPushButton('开始制作启动盘')
         self.make_btn.setIcon(QIcon.fromTheme('media-playback-start'))
         self.make_btn.clicked.connect(self.start_usb_maker)
+        self.make_btn.setToolTip('开始将ISO文件写入选定的U盘')
         
         btn_layout.addStretch()
         btn_layout.addWidget(self.make_btn)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
+        # 关于按钮
+        about_layout = QHBoxLayout()
+        self.about_btn = QPushButton('关于')
+        self.about_btn.clicked.connect(self.show_about_dialog)
+        about_layout.addStretch()
+        about_layout.addWidget(self.about_btn)
+        about_layout.addStretch()
+        main_layout.addLayout(about_layout)
+
         # 底部版权信息
-        copyright_label = QLabel(' 2024 USB启动盘制作工具 | 版本 1.0')
+        copyright_label = QLabel(' 2024 上海智潮磅礴科技有限公司 | USB启动盘制作工具 v1.0')
         copyright_label.setAlignment(Qt.AlignCenter)
         copyright_label.setStyleSheet("""
             color: #7f8c8d;
@@ -189,6 +234,9 @@ class USBMakerApp(QMainWindow):
 
         # 初始化U盘列表
         self.refresh_usb_drives()
+
+        # 控制按钮状态
+        self.update_button_states()
 
     def select_iso_file(self):
         """选择ISO文件"""
@@ -241,6 +289,67 @@ class USBMakerApp(QMainWindow):
     def show_error(self, message):
         """显示错误消息"""
         QMessageBox.critical(self, '错误', message)
+
+    def update_button_states(self):
+        """控制按钮状态"""
+        if self.iso_path.text() != '未选择文件' and self.usb_combo.currentText() != '未找到U盘':
+            self.make_btn.setEnabled(True)
+        else:
+            self.make_btn.setEnabled(False)
+
+    def show_about_dialog(self):
+        """显示关于对话框"""
+        about_dialog = QDialog(self)
+        about_dialog.setWindowTitle('关于')
+        about_dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f4f6f9;
+                font-family: 'San Francisco', 'Helvetica Neue', Arial, sans-serif;
+            }
+            QLabel {
+                color: #2c3e50;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        
+        # 标题
+        title_label = QLabel('USB启动盘制作工具')
+        title_label.setFont(QFont('San Francisco', 18, QFont.Bold))
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # 版本信息
+        version_label = QLabel('版本 1.0')
+        version_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(version_label)
+        
+        # 公司信息
+        company_label = QLabel('上海智潮磅礴科技有限公司')
+        company_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(company_label)
+        
+        # 联系方式
+        contact_label = QLabel('联系邮箱：zhitrend@gmail.com')
+        contact_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(contact_label)
+        
+        # 描述
+        desc_label = QLabel('专业的USB启动盘制作工具，简单、高效、安全')
+        desc_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc_label)
+        
+        # 确定按钮
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton('确定')
+        ok_btn.clicked.connect(about_dialog.accept)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        about_dialog.setLayout(layout)
+        about_dialog.exec_()
 
 def main():
     app = QApplication(sys.argv)
