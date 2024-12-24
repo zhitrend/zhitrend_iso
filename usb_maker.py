@@ -49,10 +49,113 @@ class USBMaker(QObject):
                 'status=progress'
             ]
         elif system == 'windows':
-            # Windows可能需要使用其他工具如Win32DiskImager
-            return []
+            # Windows使用powershell的dd等效命令
+            return [
+                'powershell', 
+                '-Command', 
+                f'dd if="{iso_path}" of="{usb_device}" bs=1m'
+            ]
         else:
             raise OSError(f"不支持的操作系统: {system}")
+
+    def list_usb_drives(self):
+        """列出可用的USB驱动器"""
+        system = platform.system().lower()
+        drives = []
+
+        if system == 'windows':
+            import win32api
+            import win32file
+            
+            # 获取所有逻辑驱动器
+            all_drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
+            
+            for drive in all_drives:
+                try:
+                    # 检查驱动器类型
+                    drive_type = win32file.GetDriveType(drive)
+                    
+                    # 可移动驱动器
+                    if drive_type == win32file.DRIVE_REMOVABLE:
+                        drives.append({
+                            'path': drive,
+                            'label': drive,
+                            'size': self.get_drive_size(drive)
+                        })
+                except Exception as e:
+                    self.logger.warning(f"检查驱动器 {drive} 时出错: {e}")
+        
+        elif system == 'darwin':
+            import subprocess
+            
+            # macOS使用diskutil list
+            try:
+                output = subprocess.check_output(['diskutil', 'list'], universal_newlines=True)
+                for line in output.split('\n'):
+                    if '/dev/disk' in line and 'external' in line.lower():
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            device = parts[1]
+                            drives.append({
+                                'path': f'/dev/disk{device}',
+                                'label': f'Disk {device}',
+                                'size': self.get_drive_size(f'/dev/disk{device}')
+                            })
+            except Exception as e:
+                self.logger.warning(f"列出USB驱动器时出错: {e}")
+        
+        elif system == 'linux':
+            import pyudev
+            
+            context = pyudev.Context()
+            for device in context.list_devices(subsystem='block', DEVTYPE='disk'):
+                if device.get('ID_BUS') == 'usb':
+                    drives.append({
+                        'path': device.device_node,
+                        'label': device.get('ID_VENDOR', 'Unknown'),
+                        'size': self.get_drive_size(device.device_node)
+                    })
+        
+        return drives
+
+    def get_drive_size(self, drive_path):
+        """获取驱动器大小"""
+        system = platform.system().lower()
+        
+        if system == 'windows':
+            import win32api
+            try:
+                free_bytes = win32api.GetDiskFreeSpaceEx(drive_path)[1]
+                total_bytes = win32api.GetDiskFreeSpaceEx(drive_path)[2]
+                return total_bytes
+            except Exception as e:
+                self.logger.warning(f"获取Windows驱动器 {drive_path} 大小出错: {e}")
+                return 0
+        
+        elif system == 'darwin':
+            import subprocess
+            try:
+                output = subprocess.check_output(['diskutil', 'info', drive_path], universal_newlines=True)
+                for line in output.split('\n'):
+                    if 'Total Size:' in line:
+                        # 解析大小，例如 "Total Size:           15.99 GB (15728640000 Bytes)"
+                        size_match = re.search(r'\((\d+)\s*Bytes\)', line)
+                        if size_match:
+                            return int(size_match.group(1))
+            except Exception as e:
+                self.logger.warning(f"获取macOS驱动器 {drive_path} 大小出错: {e}")
+                return 0
+        
+        elif system == 'linux':
+            import os
+            try:
+                st = os.statvfs(drive_path)
+                return st.f_blocks * st.f_frsize
+            except Exception as e:
+                self.logger.warning(f"获取Linux驱动器 {drive_path} 大小出错: {e}")
+                return 0
+        
+        return 0
 
     def get_disk_size(self, disk_path):
         """尝试多种方法获取磁盘大小"""
