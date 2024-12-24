@@ -1,5 +1,7 @@
 {
     "app_name": "USB Maker",
+    "switch_language": "Switch Language",
+    "language": "Language:",
     "create_bootable_usb": "Create Bootable USB",
     "select_iso": "Select ISO File",
     "select_usb": "Select USB Drive",
@@ -9,5 +11,30 @@
     "warnings": {
         "low_space": "Low disk space",
         "not_removable": "Not a removable device"
-    }
+    },
+    "admin_privileges": "Admin Privileges",
+    "need_admin_privileges": "Need Admin Privileges",
+    "enter_admin_password": "Please enter admin password",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "about": "About",
+    "browse": "Browse",
+    "select_iso_file": "Select ISO File",
+    "no_file_selected": "No file selected",
+    "select_iso_tooltip": "Select ISO file to create bootable USB",
+    "select_usb_placeholder": "Please select USB drive",
+    "refresh": "Refresh",
+    "refresh_usb_tooltip": "Rescan available USB drives",
+    "progress": "Progress:",
+    "start_process_tooltip": "Start writing ISO to selected USB drive",
+    "copyright_info": " 2024 Shanghai Zhichao Technology Co., Ltd. | USB Maker v1.0",
+    "no_usb_found": "No USB drive found",
+    "info": "Information",
+    "version_info": "Version 1.0",
+    "company_info": "Shanghai Zhichao Technology Co., Ltd.",
+    "contact_info": "Contact Email: zhitrend@gmail.com",
+    "website_info": "Company Website: https://zhitrend.us.kg",
+    "app_description": "Professional USB Bootable Drive Creation Tool, Simple, Efficient, Safe",
+    "ok": "OK",
+    "no_admin_password": "No admin password provided, cannot create bootable USB"
 }

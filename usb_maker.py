@@ -17,12 +17,41 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QSettings
 from PyQt5.QtWidgets import QMessageBox
+from pathlib import Path
 
 # 国际化支持
-import i18n
-i18n.load_path.append('./locales')
-i18n.set('fallback', 'en')
-i18n.set('filename_format', '{locale}.{format}')
+import json
+import os
+
+def load_translations(language='en'):
+    locales_dir = os.path.join(os.path.dirname(__file__), 'locales')
+    translation_file = os.path.join(locales_dir, f'{language}.json')
+    
+    try:
+        with open(translation_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Fallback to English if translation not found
+        with open(os.path.join(locales_dir, 'en.json'), 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+def set_language(language='en'):
+    """
+    Set the application language
+    :param language: Language code (e.g., 'en', 'zh')
+    """
+    global TRANSLATIONS
+    TRANSLATIONS = load_translations(language)
+
+# Default language
+TRANSLATIONS = load_translations()
+
+def t(key):
+    """
+    Translation function that retrieves text from TRANSLATIONS
+    Fallbacks to the key itself if translation is not found
+    """
+    return TRANSLATIONS.get(key, key)
 
 # 配置日志
 import logging
@@ -59,7 +88,8 @@ class USBMaker(QObject):
         """初始化国际化支持"""
         # 从系统设置读取语言
         current_lang = self.settings.value('language', 'en')
-        i18n.set('locale', current_lang)
+        global TRANSLATIONS
+        TRANSLATIONS = load_translations(current_lang)
 
     def init_theme(self):
         """初始化主题"""

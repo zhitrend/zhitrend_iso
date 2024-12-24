@@ -1,5 +1,7 @@
 {
     "app_name": "USB启动盘制作工具",
+    "switch_language": "切换语言",
+    "language": "语言：",
     "create_bootable_usb": "创建启动盘",
     "select_iso": "选择ISO文件",
     "select_usb": "选择U盘",
@@ -9,5 +11,30 @@
     "warnings": {
         "low_space": "磁盘空间不足",
         "not_removable": "不是可移动设备"
-    }
+    },
+    "admin_privileges": "管理员权限",
+    "need_admin_privileges": "需要管理员权限",
+    "enter_admin_password": "请输入管理员密码",
+    "cancel": "取消",
+    "confirm": "确认",
+    "about": "关于",
+    "browse": "浏览",
+    "select_iso_file": "选择ISO文件",
+    "no_file_selected": "未选择文件",
+    "select_iso_tooltip": "选择要制作启动盘的ISO文件",
+    "select_usb_placeholder": "请选择U盘",
+    "refresh": "刷新",
+    "refresh_usb_tooltip": "重新扫描可用U盘",
+    "progress": "写入进度:",
+    "start_process_tooltip": "开始将ISO文件写入选定的U盘",
+    "copyright_info": " 2024 上海智潮磅礴科技有限公司 | USB启动盘制作工具 v1.0",
+    "no_usb_found": "未找到U盘",
+    "info": "提示",
+    "version_info": "版本 1.0",
+    "company_info": "上海智潮磅礴科技有限公司",
+    "contact_info": "联系邮箱：zhitrend@gmail.com",
+    "website_info": "公司网站：https://zhitrend.us.kg",
+    "app_description": "专业的USB启动盘制作工具，简单、高效、安全",
+    "ok": "确定",
+    "no_admin_password": "未提供管理员密码，无法制作启动盘"
 }
