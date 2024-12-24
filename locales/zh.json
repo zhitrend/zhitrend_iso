@@ -1,0 +1,13 @@
+{
+    "app_name": "USB启动盘制作工具",
+    "create_bootable_usb": "创建启动盘",
+    "select_iso": "选择ISO文件",
+    "select_usb": "选择U盘",
+    "start_process": "开始制作",
+    "success": "成功",
+    "error": "错误",
+    "warnings": {
+        "low_space": "磁盘空间不足",
+        "not_removable": "不是可移动设备"
+    }
+}
