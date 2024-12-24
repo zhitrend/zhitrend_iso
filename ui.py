@@ -119,10 +119,27 @@ class USBMakerApp(QMainWindow):
         title_label.setFont(QFont('San Francisco', 22, QFont.Bold))
         title_label.setStyleSheet("color: #2c3e50;")
         
-        title_layout.addStretch()
+        # 关于按钮
+        self.about_btn = QPushButton('关于')
+        self.about_btn.setIcon(QIcon.fromTheme('help-about'))
+        self.about_btn.clicked.connect(self.show_about_dialog)
+        self.about_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #2c3e50;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                color: #3498db;
+            }
+        """)
+        
         title_layout.addWidget(icon_label)
+        title_label.setAlignment(Qt.AlignCenter)
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(self.about_btn)
         main_layout.addLayout(title_layout)
 
         # 分隔线
@@ -206,15 +223,6 @@ class USBMakerApp(QMainWindow):
         btn_layout.addWidget(self.make_btn)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
-
-        # 关于按钮
-        about_layout = QHBoxLayout()
-        self.about_btn = QPushButton('关于')
-        self.about_btn.clicked.connect(self.show_about_dialog)
-        about_layout.addStretch()
-        about_layout.addWidget(self.about_btn)
-        about_layout.addStretch()
-        main_layout.addLayout(about_layout)
 
         # 底部版权信息
         copyright_label = QLabel(' 2024 上海智潮磅礴科技有限公司 | USB启动盘制作工具 v1.0')
@@ -333,6 +341,11 @@ class USBMakerApp(QMainWindow):
         contact_label = QLabel('联系邮箱：zhitrend@gmail.com')
         contact_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(contact_label)
+        
+        # 公司网站
+        website_label = QLabel('公司网站：https://zhitrend.us.kg')
+        website_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(website_label)
         
         # 描述
         desc_label = QLabel('专业的USB启动盘制作工具，简单、高效、安全')
