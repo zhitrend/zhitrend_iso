@@ -1,28 +1,58 @@
-import subprocess
 import os
+import sys
 import threading
 import re
+import subprocess
+import platform
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
-import logging
 
 # 配置日志
+import logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='/tmp/usb_maker.log',
-    filemode='w'
+    filename='/tmp/usb_maker.log', 
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
 class USBMaker(QObject):
-    progress_signal = pyqtSignal(int)
     status_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, logger=None):
         super().__init__()
-        # 初始化日志记录器
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger = logger or logging.getLogger(__name__)
+
+    def get_sudo_command(self):
+        """获取跨平台的提权命令"""
+        system = platform.system().lower()
+        if system == 'darwin':  # macOS
+            return ['sudo', '-S']
+        elif system == 'linux':
+            return ['sudo', '-S']
+        elif system == 'windows':
+            # Windows不直接支持sudo，可能需要特殊处理
+            return []
+        else:
+            raise OSError(f"不支持的操作系统: {system}")
+
+    def get_dd_command(self, iso_path, usb_device):
+        """获取跨平台的dd命令"""
+        system = platform.system().lower()
+        if system in ['darwin', 'linux']:
+            return [
+                *self.get_sudo_command(),
+                'dd', 
+                f'if={iso_path}', 
+                f'of={usb_device}', 
+                'bs=1m', 
+                'status=progress'
+            ]
+        elif system == 'windows':
+            # Windows可能需要使用其他工具如Win32DiskImager
+            return []
+        else:
+            raise OSError(f"不支持的操作系统: {system}")
 
     def get_disk_size(self, disk_path):
         """尝试多种方法获取磁盘大小"""
@@ -138,11 +168,8 @@ class USBMaker(QObject):
                 # 检查sudo密码是否存在
                 sudo_password = os.environ.get('SUDO_PASSWORD', '')
                 
-                # 打印调试信息
-                self.logger.info(f"获取的sudo密码长度: {len(sudo_password)}")
-                
                 # 使用正则表达式精确提取磁盘路径
-                path_match = re.search(r'\((/dev/disk\d+)\)', usb_device_display)
+                path_match = re.search(r'\((/dev/\w+\d*)\)', usb_device_display)
                 if not path_match:
                     raise ValueError(f"无法从 {usb_device_display} 提取磁盘路径")
                 
@@ -160,19 +187,27 @@ class USBMaker(QObject):
                 iso_size = os.path.getsize(iso_path)
                 self.logger.info(f"ISO文件大小: {iso_size} 字节")
                 
-                # 使用shell执行dd命令
-                dd_command = f"echo '{sudo_password}' | sudo -S dd if='{iso_path}' of='{usb_device}' bs=1m status=progress"
+                # 获取跨平台命令
+                dd_command = self.get_dd_command(iso_path, usb_device)
                 
-                self.logger.info(f"执行命令: {dd_command}")
+                if not dd_command:
+                    raise OSError("当前操作系统不支持直接制作启动盘")
+                
+                self.logger.info(f"执行命令: {' '.join(dd_command)}")
 
-                # 使用subprocess.Popen执行命令
+                # 使用subprocess执行命令
                 process = subprocess.Popen(
                     dd_command, 
-                    shell=True,
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE, 
                     universal_newlines=True
                 )
+
+                # 发送密码
+                if 'sudo' in dd_command:
+                    process.stdin.write(sudo_password + '\n')
+                    process.stdin.flush()
 
                 # 实时跟踪进度
                 while True:
