@@ -2,7 +2,16 @@ import subprocess
 import os
 import threading
 import re
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename='/tmp/usb_maker.log',
+    filemode='w'
+)
 
 class USBMaker(QObject):
     progress_signal = pyqtSignal(int)
@@ -11,6 +20,9 @@ class USBMaker(QObject):
 
     def __init__(self):
         super().__init__()
+        # 初始化日志记录器
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
 
     def get_disk_size(self, disk_path):
         """尝试多种方法获取磁盘大小"""
@@ -48,7 +60,7 @@ class USBMaker(QObject):
             return '未知大小'
         
         except Exception as e:
-            print(f"获取磁盘大小失败: {e}")
+            self.logger.error(f"获取磁盘大小失败: {e}")
             return '未知大小'
 
     def get_usb_drives(self):
@@ -115,7 +127,7 @@ class USBMaker(QObject):
         
         except Exception as e:
             error_msg = f"获取U盘列表失败: {str(e)}"
-            print(error_msg)
+            self.logger.error(error_msg)
             self.error_signal.emit(error_msg)
             return ['未找到U盘']
 
@@ -123,68 +135,108 @@ class USBMaker(QObject):
         """制作启动盘"""
         def run_dd():
             try:
+                # 检查sudo密码是否存在
+                sudo_password = os.environ.get('SUDO_PASSWORD', '')
+                
+                # 打印调试信息
+                self.logger.info(f"获取的sudo密码长度: {len(sudo_password)}")
+                
                 # 使用正则表达式精确提取磁盘路径
                 path_match = re.search(r'\((/dev/disk\d+)\)', usb_device_display)
                 if not path_match:
                     raise ValueError(f"无法从 {usb_device_display} 提取磁盘路径")
                 
                 usb_device = path_match.group(1)
-                print(f"准备写入磁盘: {usb_device}")
+                self.logger.info(f"准备写入磁盘: {usb_device}")
                 
-                # 尝试卸载U盘的所有分区
-                try:
-                    # 获取U盘的所有分区
-                    partitions_output = subprocess.check_output(['diskutil', 'list', usb_device], universal_newlines=True)
-                    partition_matches = re.findall(r'(/dev/disk\d+s\d+)', partitions_output)
-                    
-                    # 逐个卸载分区
-                    for partition in partition_matches:
-                        try:
-                            subprocess.run(['diskutil', 'unmount', partition], check=True)
-                            print(f"成功卸载分区: {partition}")
-                        except subprocess.CalledProcessError:
-                            print(f"无法卸载分区: {partition}")
-                except Exception as e:
-                    print(f"获取分区失败: {e}")
+                # 检查ISO文件是否存在且可读
+                if not os.path.exists(iso_path):
+                    raise FileNotFoundError(f"ISO文件不存在: {iso_path}")
                 
-                # 卸载整个磁盘
-                subprocess.run(['diskutil', 'unmountDisk', usb_device], check=True)
+                if not os.access(iso_path, os.R_OK):
+                    raise PermissionError(f"无法读取ISO文件: {iso_path}")
                 
-                # 使用dd命令写入
-                total_size = os.path.getsize(iso_path)
-                dd_command = [
-                    'sudo', 'dd', 
-                    f'if={iso_path}', 
-                    f'of={usb_device}', 
-                    'bs=1m'
-                ]
+                # 获取ISO文件大小
+                iso_size = os.path.getsize(iso_path)
+                self.logger.info(f"ISO文件大小: {iso_size} 字节")
+                
+                # 使用shell执行dd命令
+                dd_command = f"echo '{sudo_password}' | sudo -S dd if='{iso_path}' of='{usb_device}' bs=1m status=progress"
+                
+                self.logger.info(f"执行命令: {dd_command}")
 
-                process = subprocess.Popen(dd_command, 
-                                           stdout=subprocess.PIPE, 
-                                           stderr=subprocess.PIPE, 
-                                           universal_newlines=True)
+                # 使用subprocess.Popen执行命令
+                process = subprocess.Popen(
+                    dd_command, 
+                    shell=True,
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE, 
+                    universal_newlines=True
+                )
 
+                # 实时跟踪进度
                 while True:
-                    output = process.stderr.readline()
-                    if output == '' and process.poll() is not None:
+                    # 读取stderr输出
+                    stderr_line = process.stderr.readline()
+                    
+                    # 记录所有输出
+                    if stderr_line:
+                        self.logger.info(f"dd输出: {stderr_line.strip()}")
+                        
+                        # 解析进度信息
+                        progress_match = re.search(r'(\d+)\s*bytes', stderr_line)
+                        if progress_match:
+                            try:
+                                current_copied = int(progress_match.group(1))
+                                progress = min(int((current_copied / iso_size) * 100), 100)
+                                
+                                # 在主线程中发送信号
+                                def update_progress():
+                                    self.progress_signal.emit(progress)
+                                
+                                from PyQt5.QtCore import QTimer
+                                QTimer.singleShot(0, update_progress)
+                            except Exception as e:
+                                self.logger.error(f"进度计算错误: {e}")
+                    
+                    # 检查进程是否结束
+                    if process.poll() is not None:
                         break
-                    if 'copied' in output:
-                        try:
-                            copied_size = int(output.split()[0].replace(',', ''))
-                            progress = int((copied_size / total_size) * 100)
-                            self.progress_signal.emit(progress)
-                        except:
-                            pass
 
-                if process.returncode == 0:
-                    self.status_signal.emit("启动盘制作成功！")
+                # 检查命令执行结果
+                return_code = process.returncode
+                
+                if return_code == 0:
+                    # 在主线程中发送成功信号
+                    def emit_success():
+                        self.status_signal.emit("启动盘制作成功！")
+                        self.progress_signal.emit(100)
+                    
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(0, emit_success)
                 else:
-                    self.error_signal.emit("启动盘制作失败")
+                    # 获取错误输出
+                    _, stderr = process.communicate()
+                    error_msg = f"启动盘制作失败：{stderr}"
+                    self.logger.error(error_msg)
+                    
+                    # 在主线程中发送错误信号
+                    def emit_error():
+                        self.error_signal.emit(error_msg)
+                    
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(0, emit_error)
 
             except Exception as e:
                 error_msg = f"制作启动盘出错: {str(e)}"
-                print(error_msg)
-                self.error_signal.emit(error_msg)
+                self.logger.error(error_msg, exc_info=True)
+                
+                # 在主线程中发送错误信号
+                def emit_error():
+                    self.error_signal.emit(error_msg)
+                
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(0, emit_error)
 
         # 在新线程中执行
         thread = threading.Thread(target=run_dd)

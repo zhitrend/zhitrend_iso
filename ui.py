@@ -1,10 +1,90 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFileDialog, QComboBox, 
-                             QProgressBar, QWidget, QMessageBox, QFrame, QDialog)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
+                             QProgressBar, QWidget, QMessageBox, QFrame, QDialog,
+                             QLineEdit, QDialogButtonBox)
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
+import os
+import subprocess
 from usb_maker import USBMaker
+
+class PasswordDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('管理员权限')
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f0f4f8;
+                border-radius: 10px;
+            }
+            QLabel {
+                color: #2c3e50;
+                font-size: 14px;
+            }
+            QLineEdit {
+                padding: 8px;
+                border: 1px solid #bdc3c7;
+                border-radius: 5px;
+                background-color: white;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        
+        # 图标和标题
+        header_layout = QHBoxLayout()
+        icon_label = QLabel()
+        icon_label.setPixmap(QIcon.fromTheme('dialog-password', QIcon(':/icons/password-icon.png')).pixmap(48, 48))
+        title_label = QLabel('需要管理员权限')
+        title_label.setFont(QFont('San Francisco', 16, QFont.Bold))
+        
+        header_layout.addWidget(icon_label)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # 说明文本
+        desc_label = QLabel('请输入管理员密码以继续操作')
+        desc_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc_label)
+        
+        # 密码输入
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setPlaceholderText('在此输入管理员密码')
+        layout.addWidget(self.password_input)
+        
+        # 按钮
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton('取消')
+        confirm_btn = QPushButton('确认')
+        
+        cancel_btn.clicked.connect(self.reject)
+        confirm_btn.clicked.connect(self.accept)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(confirm_btn)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+        self.setFixedSize(400, 250)
+
+    def get_password(self):
+        return self.password_input.text()
 
 class USBMakerApp(QMainWindow):
     def __init__(self):
@@ -174,6 +254,7 @@ class USBMakerApp(QMainWindow):
         self.usb_label = QLabel('选择U盘:')
         self.usb_combo = QComboBox()
         self.usb_combo.setPlaceholderText('请选择U盘')
+        self.usb_combo.currentIndexChanged.connect(self.update_button_states)  # 在U盘选择时触发按钮状态更新
         self.refresh_usb_btn = QPushButton('刷新')
         self.refresh_usb_btn.setIcon(QIcon.fromTheme('view-refresh'))
         self.refresh_usb_btn.clicked.connect(self.refresh_usb_drives)
@@ -252,6 +333,7 @@ class USBMakerApp(QMainWindow):
         if file_path:
             self.iso_path.setText(file_path)
             self.iso_path.setStyleSheet("color: #2ecc71; font-weight: bold;")
+            self.update_button_states()
 
     def refresh_usb_drives(self):
         """刷新U盘列表"""
@@ -263,28 +345,31 @@ class USBMakerApp(QMainWindow):
         else:
             self.usb_combo.addItem('未找到U盘')
             self.usb_combo.setStyleSheet("color: #e74c3c;")
+        self.update_button_states()
 
     def start_usb_maker(self):
         """开始制作启动盘"""
-        iso_path = self.iso_path.text()
-        usb_device = self.usb_combo.currentText()
-
-        if iso_path == '未选择文件':
-            QMessageBox.warning(self, '错误', '请先选择ISO文件')
-            return
-
-        if usb_device == '未找到U盘':
-            QMessageBox.warning(self, '错误', '请选择有效的U盘')
-            return
-
-        # 弹出确认对话框
-        reply = QMessageBox.question(self, '确认', 
-                                     f'确定要将{iso_path}写入{usb_device}吗？\n这将清除U盘上的所有数据！', 
-                                     QMessageBox.Yes | QMessageBox.No)
+        # 自定义密码对话框
+        password_dialog = PasswordDialog(self)
         
-        if reply == QMessageBox.Yes:
+        if password_dialog.exec_() == QDialog.Accepted:
+            # 获取密码
+            password = password_dialog.get_password()
+            
+            # 设置环境变量，强制设置
+            os.environ['SUDO_PASSWORD'] = password
+            
+            # 获取选中的ISO文件和U盘
+            iso_path = self.iso_path.text()
+            usb_device = self.usb_combo.currentText()
+            
+            # 重置进度条
             self.progress_bar.setValue(0)
+            
+            # 开始制作启动盘
             self.usb_maker.create_bootable_usb(iso_path, usb_device)
+        else:
+            QMessageBox.warning(self, '错误', '未提供管理员密码，无法制作启动盘')
 
     def update_progress(self, value):
         """更新进度条"""
@@ -300,7 +385,8 @@ class USBMakerApp(QMainWindow):
 
     def update_button_states(self):
         """控制按钮状态"""
-        if self.iso_path.text() != '未选择文件' and self.usb_combo.currentText() != '未找到U盘':
+        if (self.iso_path.text() != '未选择文件' and 
+            self.usb_combo.currentText() != '未找到U盘'):
             self.make_btn.setEnabled(True)
         else:
             self.make_btn.setEnabled(False)
