@@ -418,13 +418,17 @@ class USBMaker(QObject):
             
             # 逐行分析
             for line in result.split('\n'):
-                # 查找外部物理磁盘
-                if '/dev/disk' in line and 'external' in line.lower():
+                # 查找磁盘
+                if '/dev/disk' in line:
                     # 提取磁盘号
                     disk_match = re.search(r'/dev/disk(\d+)', line)
                     if disk_match:
                         disk_number = disk_match.group(1)
                         disk_path = f'/dev/disk{disk_number}'
+                        
+                        # 检查是否为可移动设备
+                        if not self.is_removable_device(disk_path):
+                            continue
                         
                         # 获取磁盘详细信息
                         try:
@@ -475,6 +479,19 @@ class USBMaker(QObject):
             self.error_signal.emit(error_msg)
             return ['未找到U盘']
 
+    def is_removable_device(self, disk_path):
+        """判断是否为可移动设备"""
+        try:
+            # 使用 diskutil info 获取详细信息
+            detailed_info = subprocess.check_output(['diskutil', 'info', disk_path], universal_newlines=True)
+            
+            # 检查是否为外部设备或可移动设备
+            removable_keywords = ['external', 'removable', 'usb', 'flash', 'thumb']
+            return any(keyword in detailed_info.lower() for keyword in removable_keywords)
+        except Exception as e:
+            self.logger.warning(f"无法确定设备类型: {e}")
+            return False
+
     def validate_iso(self, iso_path):
         """校验ISO文件完整性"""
         try:
@@ -523,27 +540,6 @@ class USBMaker(QObject):
         except Exception as e:
             self.error_signal.emit(str(e))
             return False
-
-    def is_removable_device(self, disk_path):
-        """判断是否为可移动设备"""
-        system = platform.system().lower()
-        
-        if system == 'windows':
-            import win32file
-            return win32file.GetDriveType(disk_path) == win32file.DRIVE_REMOVABLE
-        
-        elif system == 'darwin':
-            try:
-                output = subprocess.check_output(['diskutil', 'info', disk_path], universal_newlines=True)
-                return 'Removable Media' in output
-            except:
-                return False
-        
-        elif system == 'linux':
-            import pyudev
-            context = pyudev.Context()
-            device = pyudev.Device.from_device_file(context, disk_path)
-            return device.get('ID_BUS') == 'usb'
 
     def get_free_space(self, disk_path):
         """获取磁盘剩余空间"""
