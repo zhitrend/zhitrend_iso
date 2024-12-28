@@ -637,6 +637,33 @@ class ISOListDialog(QDialog):
         return None
 
 
+class LoadingDialog(QDialog):
+    """加载对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("请稍候")
+        self.setFixedSize(200, 100)
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        
+        layout = QVBoxLayout()
+        
+        # 加载提示
+        self.label = QLabel("正在扫描设备...")
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
+        
+        # 进度条
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # 设置为循环模式
+        layout.addWidget(self.progress)
+        
+        self.setLayout(layout)
+    
+    def set_message(self, message):
+        """设置提示消息"""
+        self.label.setText(message)
+
+
 class USBMakerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -956,40 +983,56 @@ class USBMakerApp(QMainWindow):
     
     def refresh_usb_drives(self):
         """刷新USB设备列表"""
-        drives = self.usb_maker.get_usb_drives()
-        self.device_combo.clear()
+        loading = LoadingDialog(self)
+        loading.set_message("正在扫描USB设备...")
+        loading.show()
+        QApplication.processEvents()
         
-        if drives:
-            self.device_combo.addItems(drives)
-        else:
-            self.device_combo.addItem('未检测到USB设备')
+        try:
+            drives = self.usb_maker.get_usb_drives()
+            self.device_combo.clear()
+            
+            if drives:
+                self.device_combo.addItems(drives)
+            else:
+                self.device_combo.addItem('未检测到USB设备')
+        finally:
+            loading.close()
         
         self.update_button_states()
     
     def select_iso(self):
         """选择ISO文件"""
-        # 先尝试显示已发现的ISO列表
-        dialog = ISOListDialog(self)
-        dialog.refresh_list()
+        loading = LoadingDialog(self)
+        loading.set_message("正在扫描ISO文件...")
+        loading.show()
+        QApplication.processEvents()
         
-        if dialog.exec_() == QDialog.Accepted:
-            iso_path = dialog.get_selected_iso()
-            if iso_path:
-                self.iso_path.setText(iso_path)
+        try:
+            # 先尝试显示已发现的ISO列表
+            dialog = ISOListDialog(self)
+            dialog.refresh_list()
+            
+            if dialog.exec_() == QDialog.Accepted:
+                iso_path = dialog.get_selected_iso()
+                if iso_path:
+                    self.iso_path.setText(iso_path)
+                    self.update_button_states()
+                    return
+            
+            # 如果用户取消或没有选择，显示文件选择对话框
+            file_name, _ = QFileDialog.getOpenFileName(
+                self,
+                "选择ISO文件",
+                "",
+                "ISO文件 (*.iso);;所有文件 (*.*)"
+            )
+            
+            if file_name:
+                self.iso_path.setText(file_name)
                 self.update_button_states()
-                return
-        
-        # 如果用户取消或没有选择，显示文件选择对话框
-        file_name, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择ISO文件",
-            "",
-            "ISO文件 (*.iso);;所有文件 (*.*)"
-        )
-        
-        if file_name:
-            self.iso_path.setText(file_name)
-            self.update_button_states()
+        finally:
+            loading.close()
     
     def start_writing(self):
         """开始写入"""
@@ -1206,20 +1249,24 @@ class USBMakerApp(QMainWindow):
     
     def show_preferences(self):
         """显示首选项对话框"""
-        pass
+        prefs_dialog = PreferencesDialog(self)
+        prefs_dialog.exec_()
     
     def show_verify_tools(self):
         """显示验证工具"""
-        pass
+        verify_dialog = VerifyToolsDialog(self)
+        verify_dialog.exec_()
     
     def show_partition_tools(self):
         """显示分区工具"""
-        pass
+        partition_dialog = PartitionToolsDialog(self)
+        partition_dialog.exec_()
     
     def show_documentation(self):
         """显示文档"""
-        pass
-    
+        docs_dialog = DocumentationDialog(self)
+        docs_dialog.exec_()
+
     def show_about(self):
         """显示关于对话框"""
         about_dialog = QDialog(self)
@@ -1292,6 +1339,268 @@ class USBMakerApp(QMainWindow):
         
         about_dialog.setLayout(layout)
         about_dialog.exec_()
+
+
+class PreferencesDialog(QDialog):
+    """首选项对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("首选项")
+        self.setFixedSize(500, 400)
+        
+        layout = QVBoxLayout()
+        
+        # 常规设置
+        general_group = QGroupBox("常规")
+        general_layout = QFormLayout()
+        
+        # 语言选择
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["简体中文", "English"])
+        general_layout.addRow("语言:", self.language_combo)
+        
+        # 主题选择
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["浅色", "深色", "跟随系统"])
+        general_layout.addRow("主题:", self.theme_combo)
+        
+        # 自动检查更新
+        self.auto_update = QCheckBox("自动检查更新")
+        general_layout.addRow(self.auto_update)
+        
+        general_group.setLayout(general_layout)
+        layout.addWidget(general_group)
+        
+        # 写入设置
+        write_group = QGroupBox("写入")
+        write_layout = QFormLayout()
+        
+        # 验证选项
+        self.verify_after_write = QCheckBox("写入后验证")
+        write_layout.addRow(self.verify_after_write)
+        
+        # 缓冲区大小
+        self.buffer_size = QSpinBox()
+        self.buffer_size.setRange(1, 64)
+        self.buffer_size.setValue(4)
+        self.buffer_size.setSuffix(" MB")
+        write_layout.addRow("缓冲区大小:", self.buffer_size)
+        
+        write_group.setLayout(write_layout)
+        layout.addWidget(write_group)
+        
+        # 按钮
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+
+class VerifyToolsDialog(QDialog):
+    """验证工具对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("验证工具")
+        self.setFixedSize(600, 400)
+        
+        layout = QVBoxLayout()
+        
+        # 验证选项
+        options_group = QGroupBox("验证选项")
+        options_layout = QVBoxLayout()
+        
+        self.verify_checksum = QRadioButton("校验和验证")
+        self.verify_content = QRadioButton("完整性验证")
+        self.verify_both = QRadioButton("全面验证")
+        self.verify_both.setChecked(True)
+        
+        options_layout.addWidget(self.verify_checksum)
+        options_layout.addWidget(self.verify_content)
+        options_layout.addWidget(self.verify_both)
+        
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
+        
+        # 进度显示
+        progress_group = QGroupBox("验证进度")
+        progress_layout = QVBoxLayout()
+        
+        self.progress_bar = QProgressBar()
+        self.status_label = QLabel("准备就绪")
+        
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.status_label)
+        
+        progress_group.setLayout(progress_layout)
+        layout.addWidget(progress_group)
+        
+        # 按钮
+        button_layout = QHBoxLayout()
+        
+        self.start_button = QPushButton("开始验证")
+        self.cancel_button = QPushButton("取消")
+        
+        button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+
+class PartitionToolsDialog(QDialog):
+    """分区工具对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("分区工具")
+        self.setFixedSize(800, 500)
+        
+        layout = QVBoxLayout()
+        
+        # 设备选择
+        device_group = QGroupBox("设备")
+        device_layout = QHBoxLayout()
+        
+        self.device_combo = QComboBox()
+        self.refresh_button = QPushButton("刷新")
+        
+        device_layout.addWidget(self.device_combo)
+        device_layout.addWidget(self.refresh_button)
+        
+        device_group.setLayout(device_layout)
+        layout.addWidget(device_group)
+        
+        # 分区列表
+        partitions_group = QGroupBox("分区")
+        partitions_layout = QVBoxLayout()
+        
+        self.partitions_list = QListWidget()
+        
+        partitions_layout.addWidget(self.partitions_list)
+        
+        # 分区操作按钮
+        partition_buttons = QHBoxLayout()
+        
+        self.add_button = QPushButton("添加")
+        self.delete_button = QPushButton("删除")
+        self.format_button = QPushButton("格式化")
+        
+        partition_buttons.addWidget(self.add_button)
+        partition_buttons.addWidget(self.delete_button)
+        partition_buttons.addWidget(self.format_button)
+        
+        partitions_layout.addLayout(partition_buttons)
+        
+        partitions_group.setLayout(partitions_layout)
+        layout.addWidget(partitions_group)
+        
+        # 分区详情
+        details_group = QGroupBox("分区详情")
+        details_layout = QFormLayout()
+        
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(1, 1024)
+        self.size_spin.setSuffix(" GB")
+        
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["NTFS", "FAT32", "exFAT", "ext4"])
+        
+        self.label_edit = QLineEdit()
+        
+        details_layout.addRow("大小:", self.size_spin)
+        details_layout.addRow("类型:", self.type_combo)
+        details_layout.addRow("卷标:", self.label_edit)
+        
+        details_group.setLayout(details_layout)
+        layout.addWidget(details_group)
+        
+        # 按钮
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Apply | QDialogButtonBox.Close,
+            Qt.Horizontal, self
+        )
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+
+class DocumentationDialog(QDialog):
+    """文档对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("文档")
+        self.setFixedSize(800, 600)
+        
+        layout = QVBoxLayout()
+        
+        # 文档内容
+        content = QLabel()
+        content.setWordWrap(True)
+        content.setText("""
+# 智潮 USB启动盘制作工具使用说明
+
+## 1. 基本使用
+1. 选择ISO文件：点击"浏览"按钮选择要写入的ISO文件
+2. 选择目标设备：从下拉列表中选择要写入的USB设备
+3. 点击"开始写入"按钮开始制作启动盘
+
+## 2. 高级功能
+### 2.1 验证工具
+- 支持ISO文件完整性验证
+- 支持写入后的USB设备验证
+- 提供多种验证方式选择
+
+### 2.2 分区工具
+- 支持USB设备分区管理
+- 提供多种文件系统格式化选项
+- 支持分区大小调整
+
+### 2.3 其他功能
+- 支持多语言切换
+- 提供深色/浅色主题
+- 可自定义缓冲区大小
+
+## 3. 注意事项
+1. 写入过程会清除USB设备上的所有数据，请提前备份重要文件
+2. 写入过程中请勿移除USB设备
+3. 建议使用原装USB设备，以保证写入质量
+
+## 4. 常见问题
+Q: 为什么写入速度很慢？
+A: 写入速度受多种因素影响，包括：
+   - USB设备本身的读写速度
+   - USB接口版本
+   - ISO文件大小
+   - 系统负载情况
+
+Q: 写入失败怎么办？
+A: 请尝试以下方法：
+   1. 检查USB设备是否正常连接
+   2. 验证ISO文件完整性
+   3. 尝试使用其他USB端口
+   4. 检查USB设备是否损坏
+
+## 5. 技术支持
+如果您在使用过程中遇到问题，请通过以下方式获取帮助：
+- 访问官方网站：www.zhitrend.com
+- 发送邮件至：support@zhitrend.com
+- 工作时间拨打技术支持热线：400-xxx-xxxx
+""")
+        
+        # 添加滚动条
+        scroll = QListWidget()
+        scroll.addItem(QListWidgetItem(content.text()))
+        layout.addWidget(scroll)
+        
+        # 关闭按钮
+        close_button = QPushButton("关闭")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+        
+        self.setLayout(layout)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
