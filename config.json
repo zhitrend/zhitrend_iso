@@ -1,0 +1,7 @@
+{
+    "version": "1.0.0",
+    "update_url": "https://api.github.com/repos/yourusername/zhitrend_iso/releases/latest",
+    "check_update_interval": 86400,
+    "theme": "auto",
+    "last_update_check": 1735392163.541985
+}
