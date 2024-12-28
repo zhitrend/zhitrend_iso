@@ -679,26 +679,161 @@ class ClickableLineEdit(QLineEdit):
         super().mousePressEvent(event)
 
 
+class RecentFileManager:
+    """最近文件管理器"""
+    def __init__(self):
+        self.recent_files = []
+        self.max_items = 10
+        self.load_recent_files()
+    
+    def add_file(self, file_path):
+        """添加文件到最近列表"""
+        if file_path in self.recent_files:
+            self.recent_files.remove(file_path)
+        self.recent_files.insert(0, file_path)
+        if len(self.recent_files) > self.max_items:
+            self.recent_files.pop()
+        self.save_recent_files()
+    
+    def load_recent_files(self):
+        """从配置文件加载最近文件列表"""
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+                self.recent_files = config.get('recent_files', [])
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.recent_files = []
+    
+    def save_recent_files(self):
+        """保存最近文件列表到配置文件"""
+        try:
+            config = {}
+            if os.path.exists('config.json'):
+                with open('config.json', 'r') as f:
+                    config = json.load(f)
+            config['recent_files'] = self.recent_files
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            print(f"保存最近文件列表失败: {e}")
+
+
+class DropArea(QWidget):
+    """可拖拽区域"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        
+    def dragEnterEvent(self, event):
+        """拖拽进入事件"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toString().lower().endswith('.iso'):
+                    event.accept()
+                    return
+        event.ignore()
+    
+    def dragMoveEvent(self, event):
+        """拖拽移动事件"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toString().lower().endswith('.iso'):
+                    event.accept()
+                    return
+        event.ignore()
+    
+    def dropEvent(self, event):
+        """拖拽放下事件"""
+        for url in event.mimeData().urls():
+            if url.isLocalFile() and url.toString().lower().endswith('.iso'):
+                self.parent().handle_iso_file(url.toLocalFile())
+                break
+
+
+class SpeedDisplay(QWidget):
+    """速度显示组件"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        
+        # 速度标签
+        self.speed_label = QLabel("当前速度: 0 MB/s")
+        self.speed_label.setStyleSheet("""
+            QLabel {
+                color: #2c3e50;
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        layout.addWidget(self.speed_label)
+        
+        # 平均速度标签
+        self.avg_speed_label = QLabel("平均速度: 0 MB/s")
+        self.avg_speed_label.setStyleSheet("""
+            QLabel {
+                color: #7f8c8d;
+                font-size: 12px;
+            }
+        """)
+        layout.addWidget(self.avg_speed_label)
+        
+        # 峰值速度标签
+        self.peak_speed_label = QLabel("峰值速度: 0 MB/s")
+        self.peak_speed_label.setStyleSheet("""
+            QLabel {
+                color: #7f8c8d;
+                font-size: 12px;
+            }
+        """)
+        layout.addWidget(self.peak_speed_label)
+        
+        # 初始化数据
+        self.speeds = []
+        self.peak_speed = 0
+        
+    def update_speed(self, speed):
+        """更新速度显示"""
+        # 更新当前速度
+        self.speed_label.setText(f"当前速度: {speed:.1f} MB/s")
+        
+        # 更新速度历史
+        self.speeds.append(speed)
+        if len(self.speeds) > 60:  # 保留最近60个数据点
+            self.speeds.pop(0)
+        
+        # 更新平均速度
+        avg_speed = sum(self.speeds) / len(self.speeds)
+        self.avg_speed_label.setText(f"平均速度: {avg_speed:.1f} MB/s")
+        
+        # 更新峰值速度
+        if speed > self.peak_speed:
+            self.peak_speed = speed
+        self.peak_speed_label.setText(f"峰值速度: {self.peak_speed:.1f} MB/s")
+
+
 class USBMakerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("智潮磅礴科技有限公司 USB启动盘制作工具")
         self.setMinimumSize(800, 600)
         
-        # 初始化USB制作器
-        self.usb_maker = USBMaker()
-        
         # 设置应用图标
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), 'resources', 'icon.svg')))
         
-        # 创建主窗口部件
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
+        # 初始化最近文件管理器
+        self.recent_files = RecentFileManager()
+        
+        # 初始化USB制作器
+        self.usb_maker = USBMaker()
+        
+        # 创建中心部件
+        central_widget = DropArea(self)
+        self.setCentralWidget(central_widget)
         
         # 创建主布局
-        main_layout = QVBoxLayout()
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(20)
-        main_layout.setContentsMargins(30, 30, 30, 30)
         
         # 添加Logo
         logo_label = QLabel()
@@ -720,28 +855,15 @@ class USBMakerApp(QMainWindow):
         """)
         main_layout.addWidget(title_label)
         
-        # 创建文件选择区域
-        file_group = QGroupBox("选择ISO文件")
-        file_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 16px;
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                margin-top: 1ex;
-                padding: 20px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
+        # 创建文件选择部分
+        file_group = QGroupBox("ISO文件选择")
+        file_layout = QVBoxLayout()  # 改为垂直布局
         
-        file_layout = QHBoxLayout()
+        # 文件选择行
+        file_select_layout = QHBoxLayout()
         
         self.iso_path = ClickableLineEdit()
-        self.iso_path.setPlaceholderText("点击此处或使用浏览按钮选择ISO文件...")
+        self.iso_path.setPlaceholderText("点击此处、拖放或使用浏览按钮选择ISO文件...")
         self.iso_path.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -760,17 +882,16 @@ class USBMakerApp(QMainWindow):
             }
         """)
         self.iso_path.textChanged.connect(self.update_button_states)
-        self.iso_path.clicked.connect(self.select_iso)  # 连接点击信号
+        self.iso_path.clicked.connect(self.select_iso)
         
         self.select_iso_btn = QPushButton("浏览")
         self.select_iso_btn.setStyleSheet("""
             QPushButton {
-                padding: 8px 20px;
                 background: #3498db;
                 color: white;
                 border: none;
                 padding: 8px 15px;
-                border-radius: 5px;
+                border-radius: 4px;
                 font-size: 14px;
                 font-weight: bold;
             }
@@ -780,32 +901,50 @@ class USBMakerApp(QMainWindow):
             QPushButton:pressed {
                 background: #2472a4;
             }
+            QPushButton:disabled {
+                background: #bdc3c7;
+            }
         """)
         self.select_iso_btn.clicked.connect(self.select_iso)
         
-        file_layout.addWidget(self.iso_path)
-        file_layout.addWidget(self.select_iso_btn)
+        file_select_layout.addWidget(self.iso_path)
+        file_select_layout.addWidget(self.select_iso_btn)
+        file_layout.addLayout(file_select_layout)
+        
+        # 最近文件列表
+        recent_label = QLabel("最近使用的ISO文件:")
+        recent_label.setStyleSheet("color: #7f8c8d; margin-top: 10px;")
+        file_layout.addWidget(recent_label)
+        
+        self.recent_list = QListWidget()
+        self.recent_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                background: white;
+                max-height: 100px;
+            }
+            QListWidget::item {
+                padding: 5px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            QListWidget::item:hover {
+                background: #f8f9fa;
+            }
+            QListWidget::item:selected {
+                background: #e8f0fe;
+                color: #2c3e50;
+            }
+        """)
+        self.recent_list.itemClicked.connect(self.select_recent_file)
+        self.update_recent_files_list()
+        file_layout.addWidget(self.recent_list)
+        
         file_group.setLayout(file_layout)
         main_layout.addWidget(file_group)
         
-        # 创建设备选择区域
-        device_group = QGroupBox("选择目标设备")
-        device_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 16px;
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                margin-top: 1ex;
-                padding: 20px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-        
+        # 创建设备选择部分
+        device_group = QGroupBox("目标设备")
         device_layout = QHBoxLayout()
         
         self.device_combo = QComboBox()
@@ -859,25 +998,13 @@ class USBMakerApp(QMainWindow):
         device_group.setLayout(device_layout)
         main_layout.addWidget(device_group)
         
-        # 创建进度区域
+        # 创建进度部分
         progress_group = QGroupBox("写入进度")
-        progress_group.setStyleSheet("""
-            QGroupBox {
-                font-size: 16px;
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                margin-top: 1ex;
-                padding: 20px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-        
         progress_layout = QVBoxLayout()
+        
+        # 添加速度显示
+        self.speed_display = SpeedDisplay()
+        progress_layout.addWidget(self.speed_display)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
@@ -914,17 +1041,42 @@ class USBMakerApp(QMainWindow):
         progress_group.setLayout(progress_layout)
         main_layout.addWidget(progress_group)
         
-        # 创建操作按钮区域
+        # 创建操作按钮部分
         button_layout = QHBoxLayout()
         button_layout.setSpacing(15)
         
         self.start_btn = QPushButton("开始写入")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                padding: 12px 40px;
+                background: #27ae60;
+                color: white;
+                border: none;
+                padding: 10px 30px;
+                border-radius: 4px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #2ecc71;
+            }
+            QPushButton:pressed {
+                background: #219a52;
+            }
+            QPushButton:disabled {
+                background: #bdc3c7;
+            }
+        """)
+        self.start_btn.clicked.connect(self.start_writing)
+        self.start_btn.setEnabled(False)
+        button_layout.addWidget(self.start_btn)
+        
+        self.cancel_btn = QPushButton("取消")
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
                 background: #e74c3c;
                 color: white;
                 border: none;
+                padding: 10px 30px;
                 border-radius: 4px;
                 font-size: 16px;
                 font-weight: bold;
@@ -939,55 +1091,31 @@ class USBMakerApp(QMainWindow):
                 background: #bdc3c7;
             }
         """)
-        self.start_btn.clicked.connect(self.start_writing)
-        
-        self.verify_btn = QPushButton("验证")
-        self.verify_btn.setStyleSheet("""
-            QPushButton {
-                padding: 12px 40px;
-                background: #9b59b6;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #8e44ad;
-            }
-            QPushButton:pressed {
-                background: #7d3c98;
-            }
-            QPushButton:disabled {
-                background: #bdc3c7;
-            }
-        """)
-        self.verify_btn.clicked.connect(self.verify_iso)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(self.verify_btn)
-        button_layout.addWidget(self.start_btn)
-        button_layout.addStretch()
+        self.cancel_btn.clicked.connect(self.cancel_writing)
+        self.cancel_btn.setEnabled(False)
+        button_layout.addWidget(self.cancel_btn)
         
         main_layout.addLayout(button_layout)
         
-        # 添加状态栏
-        self.statusBar().setStyleSheet("""
-            QStatusBar {
-                border-top: 1px solid #e0e0e0;
-                padding: 5px;
-                font-size: 12px;
-                color: #7f8c8d;
-            }
-        """)
+        # 创建状态栏
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
         
-        # 设置主布局
-        main_widget.setLayout(main_layout)
+        # 添加状态标签
+        self.status_label = QLabel("就绪")
+        self.status_bar.addWidget(self.status_label)
+        
+        # 连接信号
+        self.usb_maker.status_signal.connect(lambda msg: self.status_label.setText(msg))
+        self.usb_maker.error_signal.connect(self.show_error)
+        self.usb_maker.progress_signal.connect(self.update_progress)
+        self.usb_maker.speed_signal.connect(lambda speed: self.speed_display.update_speed(speed))
+        self.usb_maker.remaining_time_signal.connect(lambda time: self.time_label.setText(f"预计剩余时间: {time}"))
         
         # 创建菜单栏
         self.create_menu_bar()
         
-        # 初始化USB设备列表
+        # 刷新设备列表
         self.refresh_usb_drives()
         
         # 更新按钮状态
@@ -996,13 +1124,6 @@ class USBMakerApp(QMainWindow):
         # 应用主题
         self.apply_theme()
         
-        # 连接信号
-        self.usb_maker.status_signal.connect(lambda msg: self.status_label.setText(msg))
-        self.usb_maker.error_signal.connect(self.show_error)
-        self.usb_maker.progress_signal.connect(self.progress_bar.setValue)
-        self.usb_maker.speed_signal.connect(lambda speed: self.speed_label.setText(f"速度: {speed}"))
-        self.usb_maker.remaining_time_signal.connect(lambda time: self.time_label.setText(f"预计剩余时间: {time}"))
-    
     def show_error(self, message):
         """显示错误消息"""
         QMessageBox.critical(self, "错误", message)
@@ -1043,6 +1164,8 @@ class USBMakerApp(QMainWindow):
                 iso_path = dialog.get_selected_iso()
                 if iso_path:
                     self.iso_path.setText(iso_path)
+                    self.recent_files.add_file(iso_path)
+                    self.update_recent_files_list()
                     self.update_button_states()
                     return
             
@@ -1056,6 +1179,8 @@ class USBMakerApp(QMainWindow):
             
             if file_name:
                 self.iso_path.setText(file_name)
+                self.recent_files.add_file(file_name)
+                self.update_recent_files_list()
                 self.update_button_states()
         finally:
             loading.close()
@@ -1082,7 +1207,7 @@ class USBMakerApp(QMainWindow):
             self.progress_bar.setValue(0)
             self.status_label.setText('正在写入...')
             self.start_btn.setEnabled(False)
-            self.verify_btn.setEnabled(False)
+            self.cancel_btn.setEnabled(False)
             
             # 在新线程中执行写入
             def write_thread():
@@ -1097,35 +1222,25 @@ class USBMakerApp(QMainWindow):
                     self.status_label.setText('写入失败！')
                 
                 self.start_btn.setEnabled(True)
-                self.verify_btn.setEnabled(True)
+                self.cancel_btn.setEnabled(True)
             
             threading.Thread(target=write_thread, daemon=True).start()
     
-    def verify_iso(self):
-        """验证ISO文件"""
-        if not self.iso_path.text():
-            QMessageBox.warning(self, '警告', '请先选择ISO文件！')
-            return
+    def cancel_writing(self):
+        """取消写入"""
+        reply = QMessageBox.warning(
+            self,
+            '警告',
+            '确定要取消写入吗？',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
         
-        self.progress_bar.setValue(0)
-        self.status_label.setText('正在验证...')
-        self.start_btn.setEnabled(False)
-        self.verify_btn.setEnabled(False)
-        
-        # 在新线程中执行验证
-        def verify_thread():
-            success, info = self.usb_maker.verify_iso_integrity(self.iso_path.text())
-            
-            if success:
-                QMessageBox.information(self, "验证结果", info)
-            else:
-                QMessageBox.warning(self, "验证失败", info)
-            
-            self.status_label.setText('验证完成！')
+        if reply == QMessageBox.Yes:
+            self.usb_maker.cancel_writing()
+            self.status_label.setText('写入已取消！')
             self.start_btn.setEnabled(True)
-            self.verify_btn.setEnabled(True)
-        
-        threading.Thread(target=verify_thread, daemon=True).start()
+            self.cancel_btn.setEnabled(True)
     
     def update_button_states(self):
         """更新按钮状态"""
@@ -1133,7 +1248,7 @@ class USBMakerApp(QMainWindow):
         has_device = bool(self.device_combo.currentText() and self.device_combo.currentText() != '未检测到USB设备')
         
         self.start_btn.setEnabled(has_iso and has_device)
-        self.verify_btn.setEnabled(has_iso)
+        self.cancel_btn.setEnabled(has_iso)
     
     def apply_theme(self):
         """应用主题"""
@@ -1365,6 +1480,54 @@ class USBMakerApp(QMainWindow):
         
         about_dialog.setLayout(layout)
         about_dialog.exec_()
+    
+    def handle_iso_file(self, file_path):
+        """处理ISO文件"""
+        self.iso_path.setText(file_path)
+        self.recent_files.add_file(file_path)
+        self.update_recent_files_list()
+    
+    def update_recent_files_list(self):
+        """更新最近文件列表"""
+        self.recent_list.clear()
+        for file_path in self.recent_files.recent_files:
+            if os.path.exists(file_path):
+                item = QListWidgetItem(os.path.basename(file_path))
+                item.setToolTip(file_path)
+                self.recent_list.addItem(item)
+    
+    def select_recent_file(self, item):
+        """选择最近使用的文件"""
+        file_path = item.toolTip()
+        if os.path.exists(file_path):
+            self.iso_path.setText(file_path)
+        else:
+            QMessageBox.warning(self, "文件不存在", f"文件 {file_path} 不存在或已被移动/删除。")
+            self.recent_files.recent_files.remove(file_path)
+            self.update_recent_files_list()
+    
+    def update_progress(self, progress):
+        """更新进度"""
+        self.progress_bar.setValue(progress)
+        
+        # 计算写入速度
+        current_time = time.time()
+        if hasattr(self, 'last_progress_time'):
+            time_diff = current_time - self.last_progress_time
+            if time_diff > 0:
+                progress_diff = progress - self.last_progress
+                total_bytes = os.path.getsize(self.iso_path.text())
+                bytes_written = total_bytes * (progress_diff / 100)
+                speed = bytes_written / time_diff / (1024 * 1024)  # MB/s
+                self.speed_display.update_speed(speed)
+                
+                # 更新状态标签
+                remaining_time = (100 - progress) * time_diff / progress_diff if progress_diff > 0 else 0
+                status = f"进度: {progress:.1f}% | 速度: {speed:.1f} MB/s | 预计剩余时间: {int(remaining_time)}秒"
+                self.status_label.setText(status)
+        
+        self.last_progress_time = current_time
+        self.last_progress = progress
 
 
 class PreferencesDialog(QDialog):

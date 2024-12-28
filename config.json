@@ -3,5 +3,8 @@
     "update_url": "https://api.github.com/repos/yourusername/zhitrend_iso/releases/latest",
     "check_update_interval": 86400,
     "theme": "auto",
-    "last_update_check": 1735392163.541985
+    "last_update_check": 1735392163.541985,
+    "recent_files": [
+        "/Users/zhangrongwu/Downloads/Win10_22H2_Chinese_Simplified_x64v1.iso"
+    ]
 }

@@ -82,6 +82,8 @@ class USBMaker(QObject):
         self.start_time = None
         self.total_bytes = 0
         self.bytes_written = 0
+        self.is_writing = False
+        self.should_cancel = False
         
         # 初始化国际化
         self.init_internationalization()
@@ -1834,3 +1836,65 @@ class USBMaker(QObject):
                 
         except Exception as e:
             self.logger.error(f"处理文件系统事件时出错: {str(e)}")
+
+    def write_iso(self, iso_path, device_path):
+        """写入ISO文件到USB设备"""
+        try:
+            self.is_writing = True
+            self.should_cancel = False
+            
+            # 获取文件大小
+            total_size = os.path.getsize(iso_path)
+            
+            # 打开源文件和目标设备
+            with open(iso_path, 'rb') as src, open(device_path, 'wb') as dst:
+                written = 0
+                buffer_size = 1024 * 1024  # 1MB缓冲区
+                start_time = time.time()
+                
+                while written < total_size:
+                    if self.should_cancel:
+                        self.status_signal.emit('写入已取消')
+                        return False
+                    
+                    # 读取并写入数据
+                    chunk = src.read(buffer_size)
+                    if not chunk:
+                        break
+                    
+                    dst.write(chunk)
+                    written += len(chunk)
+                    
+                    # 计算进度
+                    progress = (written / total_size) * 100
+                    self.progress_signal.emit(int(progress))
+                    
+                    # 计算速度和剩余时间
+                    elapsed_time = time.time() - start_time
+                    if elapsed_time > 0:
+                        speed = written / elapsed_time / (1024 * 1024)  # MB/s
+                        remaining_size = total_size - written
+                        remaining_time = remaining_size / (written / elapsed_time)
+                        
+                        self.speed_signal.emit(speed)
+                        self.remaining_time_signal.emit(f"{int(remaining_time)}秒")
+                    
+                    # 刷新缓冲区
+                    dst.flush()
+                    os.fsync(dst.fileno())
+            
+            self.status_signal.emit('写入完成')
+            return True
+            
+        except Exception as e:
+            self.error_signal.emit(str(e))
+            return False
+            
+        finally:
+            self.is_writing = False
+            self.should_cancel = False
+    
+    def cancel_writing(self):
+        """取消写入操作"""
+        if self.is_writing:
+            self.should_cancel = True
