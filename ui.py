@@ -664,10 +664,25 @@ class LoadingDialog(QDialog):
         self.label.setText(message)
 
 
+class ClickableLineEdit(QLineEdit):
+    """可点击的输入框"""
+    clicked = pyqtSignal()  # 自定义点击信号
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)  # 设置鼠标指针为手型
+    
+    def mousePressEvent(self, event):
+        """鼠标按下事件"""
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()  # 发送点击信号
+        super().mousePressEvent(event)
+
+
 class USBMakerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("智潮 USB启动盘制作工具")
+        self.setWindowTitle("智潮磅礴科技有限公司 USB启动盘制作工具")
         self.setMinimumSize(800, 600)
         
         # 初始化USB制作器
@@ -725,8 +740,8 @@ class USBMakerApp(QMainWindow):
         
         file_layout = QHBoxLayout()
         
-        self.iso_path = QLineEdit()
-        self.iso_path.setPlaceholderText("请选择ISO文件...")
+        self.iso_path = ClickableLineEdit()
+        self.iso_path.setPlaceholderText("点击此处或使用浏览按钮选择ISO文件...")
         self.iso_path.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -735,10 +750,17 @@ class USBMakerApp(QMainWindow):
                 background: white;
                 font-size: 14px;
             }
+            QLineEdit:hover {
+                border-color: #bdc3c7;
+                background: #f9f9f9;
+            }
             QLineEdit:focus {
                 border-color: #3498db;
+                background: white;
             }
         """)
+        self.iso_path.textChanged.connect(self.update_button_states)
+        self.iso_path.clicked.connect(self.select_iso)  # 连接点击信号
         
         self.select_iso_btn = QPushButton("浏览")
         self.select_iso_btn.setStyleSheet("""
@@ -747,7 +769,8 @@ class USBMakerApp(QMainWindow):
                 background: #3498db;
                 color: white;
                 border: none;
-                border-radius: 4px;
+                padding: 8px 15px;
+                border-radius: 5px;
                 font-size: 14px;
                 font-weight: bold;
             }
@@ -824,6 +847,9 @@ class USBMakerApp(QMainWindow):
             }
             QPushButton:pressed {
                 background: #219a52;
+            }
+            QPushButton:disabled {
+                background: #bdc3c7;
             }
         """)
         self.refresh_btn.clicked.connect(self.refresh_usb_drives)
@@ -1299,13 +1325,13 @@ class USBMakerApp(QMainWindow):
         layout.addWidget(version_label)
         
         # 版权信息
-        copyright_label = QLabel(' 2024 智潮科技. 保留所有权利.')
+        copyright_label = QLabel(' 2024 智潮磅礴科技有限公司. 保留所有权利.')
         copyright_label.setAlignment(Qt.AlignCenter)
         copyright_label.setStyleSheet('font-size: 12px; color: #7f8c8d;')
         layout.addWidget(copyright_label)
         
         # 描述
-        desc_label = QLabel('智潮 USB启动盘制作工具是一款专业的系统启动盘制作软件，'
+        desc_label = QLabel('智潮磅礴科技有限公司出品的USB启动盘制作工具是一款专业的系统启动盘制作软件，'
                           '支持多种系统镜像格式，提供简单易用的操作界面和强大的功能特性。')
         desc_label.setWordWrap(True)
         desc_label.setAlignment(Qt.AlignCenter)
@@ -1540,54 +1566,158 @@ class DocumentationDialog(QDialog):
         content = QLabel()
         content.setWordWrap(True)
         content.setText("""
-# 智潮 USB启动盘制作工具使用说明
+# 智潮磅礴科技 USB启动盘制作工具使用说明
 
 ## 1. 基本使用
-1. 选择ISO文件：点击"浏览"按钮选择要写入的ISO文件
-2. 选择目标设备：从下拉列表中选择要写入的USB设备
-3. 点击"开始写入"按钮开始制作启动盘
+### 1.1 选择ISO文件
+- 方式一：点击"浏览"按钮从文件浏览器中选择ISO文件
+- 方式二：直接在输入框中输入或粘贴ISO文件的完整路径
+- 方式三：从最近使用的ISO文件列表中选择
+
+### 1.2 选择目标设备
+1. 从下拉列表中选择要写入的USB设备
+2. 如果设备未显示，点击"刷新"按钮重新扫描
+3. 请注意设备的容量信息，确保足够存储ISO文件
+
+### 1.3 开始写入
+1. 确认ISO文件和目标设备无误后，点击"开始写入"
+2. 在弹出的警告对话框中确认操作
+3. 等待写入完成，期间请勿移除设备
+
+### 1.4 验证
+- 写入完成后建议进行验证，确保数据完整性
+- 可以在写入前通过验证工具预先检查ISO文件
 
 ## 2. 高级功能
 ### 2.1 验证工具
-- 支持ISO文件完整性验证
-- 支持写入后的USB设备验证
-- 提供多种验证方式选择
+- 校验和验证：快速验证文件是否被修改
+- 完整性验证：详细检查文件内容
+- 全面验证：同时进行上述两种验证
 
 ### 2.2 分区工具
-- 支持USB设备分区管理
-- 提供多种文件系统格式化选项
-- 支持分区大小调整
+- 分区管理：添加、删除、格式化分区
+- 支持的文件系统：
+  * NTFS：适用于Windows系统
+  * FAT32：通用性好，单文件最大4GB
+  * exFAT：突破FAT32限制，适合大文件
+  * ext4：适用于Linux系统
 
 ### 2.3 其他功能
-- 支持多语言切换
-- 提供深色/浅色主题
-- 可自定义缓冲区大小
+- 多语言支持：
+  * 简体中文
+  * English
+- 主题切换：
+  * 浅色主题
+  * 深色主题
+  * 跟随系统
+- 性能优化：
+  * 可调整缓冲区大小
+  * 支持写入后自动验证
 
 ## 3. 注意事项
-1. 写入过程会清除USB设备上的所有数据，请提前备份重要文件
-2. 写入过程中请勿移除USB设备
-3. 建议使用原装USB设备，以保证写入质量
+### 3.1 数据安全
+1. 写入过程会清除USB设备上的所有数据
+2. 开始写入前请务必备份重要文件
+3. 写入过程中请勿：
+   - 移除USB设备
+   - 关闭程序
+   - 休眠/关机
 
-## 4. 常见问题
-Q: 为什么写入速度很慢？
-A: 写入速度受多种因素影响，包括：
-   - USB设备本身的读写速度
+### 3.2 设备选择
+1. 建议使用品牌USB设备
+2. 设备容量应大于ISO文件大小
+3. 尽量使用USB 3.0及以上接口
+4. 避免使用老旧或损坏的设备
+
+### 3.3 写入过程
+1. 写入速度受多种因素影响：
+   - USB设备读写速度
    - USB接口版本
    - ISO文件大小
-   - 系统负载情况
+   - 系统资源占用
+2. 大文件写入可能需要较长时间
+3. 进度条会实时显示：
+   - 当前进度
+   - 剩余时间
+   - 写入速度
 
-Q: 写入失败怎么办？
-A: 请尝试以下方法：
-   1. 检查USB设备是否正常连接
-   2. 验证ISO文件完整性
-   3. 尝试使用其他USB端口
-   4. 检查USB设备是否损坏
+## 4. 常见问题
+### 4.1 写入速度慢
+可能原因：
+- USB设备本身速度限制
+- 使用了USB 2.0接口
+- 系统资源不足
+- 设备质量问题
+
+解决方法：
+1. 使用USB 3.0及以上接口
+2. 关闭其他占用资源的程序
+3. 更换性能更好的USB设备
+4. 检查系统资源使用情况
+
+### 4.2 写入失败
+常见原因：
+- USB设备连接不稳定
+- ISO文件损坏
+- 设备写保护
+- 系统权限不足
+
+解决方法：
+1. 检查USB连接
+2. 验证ISO文件完整性
+3. 检查设备是否写保护
+4. 以管理员身份运行
+5. 尝试其他USB端口
+6. 更换USB设备
+
+### 4.3 无法识别设备
+可能原因：
+- 设备未正确连接
+- 驱动程序问题
+- 设备已损坏
+- 系统不支持
+
+解决方法：
+1. 重新插拔设备
+2. 点击刷新按钮
+3. 检查设备管理器
+4. 更新驱动程序
+5. 尝试其他USB端口
 
 ## 5. 技术支持
 如果您在使用过程中遇到问题，请通过以下方式获取帮助：
-- 访问官方网站：www.zhitrend.com
-- 发送邮件至：support@zhitrend.com
-- 工作时间拨打技术支持热线：400-xxx-xxxx
+
+### 5.1 在线支持
+- 官方网站：www.zhitrend.com
+- 技术论坛：forum.zhitrend.com
+- 在线文档：docs.zhitrend.com
+
+### 5.2 联系我们
+- 技术支持邮箱：support@zhitrend.com
+- 客服热线：400-xxx-xxxx
+- 工作时间拨打技术支持热线：周一至周五 9:00-18:00
+
+### 5.3 更新升级
+- 自动检查更新
+- 访问官网下载最新版本
+- 关注官方公众号获取更新通知
+
+## 6. 关于我们
+智潮磅礴科技有限公司专注于系统工具开发，致力于为用户提供专业、高效、可靠的软件解决方案。我们的产品以稳定性和易用性著称，得到了广大用户的信赖。
+
+### 6.1 公司简介
+- 成立时间：2024年
+- 主营业务：系统工具开发
+- 技术优势：专业团队、技术创新
+
+### 6.2 联系方式
+- 公司地址：xxx省xxx市xxx区
+- 邮政编码：xxxxxx
+- 商务合作：business@zhitrend.com
+
+### 6.3 版权声明
+Copyright 2024 智潮磅礴科技有限公司
+保留所有权利。未经许可，不得复制、修改或传播本软件的任何部分。
 """)
         
         # 添加滚动条

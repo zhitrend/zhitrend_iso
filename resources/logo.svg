@@ -3,8 +3,8 @@
     <!-- 背景 -->
     <rect width="200" height="60" fill="white"/>
     
-    <!-- 智潮科技Logo -->
-    <text x="100" y="35" font-family="Arial" font-size="24" font-weight="bold" fill="#3498db" text-anchor="middle">智潮科技</text>
+    <!-- 智潮磅礴科技Logo -->
+    <text x="100" y="35" font-family="Arial" font-size="24" font-weight="bold" fill="#3498db" text-anchor="middle">智潮磅礴科技</text>
     
     <!-- USB启动盘制作工具 -->
     <text x="100" y="50" font-family="Arial" font-size="12" fill="#7f8c8d" text-anchor="middle">USB启动盘制作工具</text>
